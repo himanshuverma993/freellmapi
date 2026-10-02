@@ -34,6 +34,7 @@ import { enforceJsonContent } from '../lib/structured-output.js';
 import type { Platform } from '@freellmapi/shared/types.js';
 import { inferQuotaPoolKey, type QuotaObservationContext } from '../services/provider-quota.js';
 import { isUnifyEnabled, getModelGroups, resolveRequestedIdForDispatch } from '../services/model-groups.js';
+import { resolveRequestedModelId } from '../services/model-aliases.js';
 import { buildModelListing, type NormalizedModel } from '../services/model-listing.js';
 import { claudeFamilyDiscoveryEntries } from '../services/anthropic-map.js';
 import { compressRequest, formatCompressionHeader } from '../services/compression/pipeline.js';
@@ -1054,8 +1055,12 @@ proxyRouter.post('/completions', async (req: Request, res: Response) => {
     return;
   }
 
-  const { model: requestedModel, prompt, suffix, temperature, top_p, stream } = parsed.data;
-  const requestedModelLabel = requestedModel ?? 'auto';
+  const { model: requestedModelRaw, prompt, suffix, temperature, top_p, stream } = parsed.data;
+  // Aliases and foreign id spaces (e.g. HuggingFace's `org/model:provider`)
+  // resolve before any routing decision; the raw id stays the label the client
+  // and the logs see, so an alias never rewrites what the caller asked for.
+  const requestedModel = requestedModelRaw ? resolveRequestedModelId(requestedModelRaw) : undefined;
+  const requestedModelLabel = requestedModelRaw ?? 'auto';
   const max_tokens = parsed.data.max_tokens != null && parsed.data.max_tokens > 0
     ? parsed.data.max_tokens : 128;
   const stop = providerSafeStop(parsed.data.stop);
@@ -1104,7 +1109,7 @@ proxyRouter.post('/completions', async (req: Request, res: Response) => {
         if (anyEnabled) {
           res.status(503).json({
             error: {
-              message: `Model '${requestedModel}' has no providers with an enabled key. Add a provider API key for it, use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
+              message: `Model '${requestedModelRaw ?? requestedModel}' has no providers with an enabled key. Add a provider API key for it, use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
               type: 'service_unavailable',
               code: 'no_providers_configured',
             },
@@ -1113,7 +1118,7 @@ proxyRouter.post('/completions', async (req: Request, res: Response) => {
         } else {
           res.status(404).json({
             error: {
-              message: `Model '${requestedModel}' is disabled. Use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
+              message: `Model '${requestedModelRaw ?? requestedModel}' is disabled. Use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
               type: 'invalid_request_error',
               code: 'model_not_found',
             },
@@ -1131,7 +1136,7 @@ proxyRouter.post('/completions', async (req: Request, res: Response) => {
         const reason = disabled ? 'is disabled' : 'is not in the catalog';
         res.status(404).json({
           error: {
-            message: `Model '${requestedModel}' ${reason}. Use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
+            message: `Model '${requestedModelRaw ?? requestedModel}' ${reason}. Use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
             type: 'invalid_request_error',
             code: 'model_not_found',
           },
@@ -1483,8 +1488,11 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
     return;
   }
 
-  const { model: requestedModel, temperature, top_p, stream } = parsed.data;
-  const requestedModelLabel = requestedModel ?? 'auto';
+  const { model: requestedModelRaw, temperature, top_p, stream } = parsed.data;
+  // See the legacy /v1/completions handler: aliases resolve before routing,
+  // the raw id remains the label.
+  const requestedModel = requestedModelRaw ? resolveRequestedModelId(requestedModelRaw) : undefined;
+  const requestedModelLabel = requestedModelRaw ?? 'auto';
   // Agent-tolerant knob normalization (#200): max_tokens <= 0 means "no
   // limit" in several clients → unset; tool_choice 'any' is OpenAI's
   // 'required'; tool definitions get their 'function' type re-defaulted.
@@ -2030,7 +2038,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         if (anyEnabled) {
           res.status(503).json({
             error: {
-              message: `Model '${requestedModel}' has no providers with an enabled key. Add a provider API key for it, use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
+              message: `Model '${requestedModelRaw ?? requestedModel}' has no providers with an enabled key. Add a provider API key for it, use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
               type: 'service_unavailable',
               code: 'no_providers_configured',
             },
@@ -2039,7 +2047,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         } else {
           res.status(404).json({
             error: {
-              message: `Model '${requestedModel}' is disabled. Use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
+              message: `Model '${requestedModelRaw ?? requestedModel}' is disabled. Use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
               type: 'invalid_request_error',
               code: 'model_not_found',
             },
@@ -2064,7 +2072,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
         const reason = disabled ? 'is disabled' : 'is not in the catalog';
         res.status(404).json({
           error: {
-            message: `Model '${requestedModel}' ${reason}. Use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
+            message: `Model '${requestedModelRaw ?? requestedModel}' ${reason}. Use 'auto' (or omit the 'model' field) to auto-route, or call /v1/models for the available list.`,
             type: 'invalid_request_error',
             code: 'model_not_found',
           },

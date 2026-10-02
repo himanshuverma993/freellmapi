@@ -6,6 +6,7 @@ import { encrypt } from '../lib/crypto.js';
 import { resolveProvider } from '../providers/index.js';
 import { setCustomWeights, setRoutingStrategy, setKeySelectionStrategy } from './router.js';
 import { ensureModelInProfiles } from './profile-models.js';
+import { getModelAliasesFromSettings, parseModelAliases, setModelAliases } from './model-aliases.js';
 import { customModelSeed } from './custom-model-seed.js';
 import { createUser, userCount } from './auth.js';
 import {
@@ -104,6 +105,10 @@ const declarativeConfigSchema = z.object({
   customProviders: z.array(customProviderSchema).optional(),
   models: z.array(modelSchema).optional(),
   fallback: z.array(fallbackEntrySchema).optional(),
+  // Model-id aliases: requested id → catalog model_id, a unified group slug
+  // (`glm-4.7`), or `auto` / `auto:<profile>`. Also accepted from the
+  // FREEAPI_MODEL_ALIASES env var, which wins for overlapping keys.
+  aliases: z.record(z.string(), z.string()).optional(),
   routing: z.object({
     strategy: z.enum(['priority', 'balanced', 'smartest', 'fastest', 'reliable', 'custom']),
     weights: z.object({
@@ -131,6 +136,8 @@ export interface DeclarativeConfigResult {
   models: number;
   fallback: number;
   routing: boolean;
+  /** Alias entries written by this apply (declarative `aliases` block). */
+  aliases: number;
   /** Per-entry problems that were degraded to a skip instead of failing the apply (#600). */
   warnings: string[];
 }
@@ -480,6 +487,7 @@ export function applyDeclarativeConfig(input: unknown, source = 'inline'): Decla
     models: 0,
     fallback: 0,
     routing: false,
+    aliases: 0,
     warnings: [],
   };
 
@@ -521,6 +529,14 @@ export function applyDeclarativeConfig(input: unknown, source = 'inline'): Decla
         setKeySelectionStrategy(parsed.data.routing.keySelectionStrategy);
       }
       result.routing = true;
+    }
+    if (parsed.data.aliases) {
+      // Merge over whatever is stored so a declarative apply never drops
+      // aliases added from the dashboard; the tolerant parser drops junk
+      // entries rather than failing the whole boot.
+      const cleaned = parseModelAliases(JSON.stringify(parsed.data.aliases));
+      setModelAliases({ ...getModelAliasesFromSettings(), ...cleaned });
+      result.aliases = Object.keys(cleaned).length;
     }
   });
   apply();
@@ -569,12 +585,13 @@ export async function activateConfiguredLicense(key: string): Promise<void> {
 export function applyDeclarativeConfigFromEnv(): DeclarativeConfigResult {
   const loaded = readConfigFromEnv();
   if (!loaded) {
-    return { applied: false, admin: false, license: false, keys: 0, customModels: 0, models: 0, fallback: 0, routing: false, warnings: [] };
+    return { applied: false, admin: false, license: false, keys: 0, customModels: 0, models: 0, fallback: 0, routing: false, aliases: 0, warnings: [] };
   }
   const result = applyDeclarativeConfig(loaded.value, loaded.source);
   console.log(
     `[config] applied ${loaded.source}: ${result.keys} keys, ${result.customModels} custom models, ` +
       `${result.models} model edits, ${result.fallback} fallback rows${result.routing ? ', routing' : ''}` +
+      `${result.aliases > 0 ? `, ${result.aliases} aliases` : ''}` +
       `${result.admin ? ', admin account created' : ''}${result.license ? ', license activation started' : ''}` +
       `${result.warnings.length > 0 ? `, ${result.warnings.length} entries skipped` : ''}`,
   );

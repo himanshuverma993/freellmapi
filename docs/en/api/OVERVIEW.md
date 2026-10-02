@@ -10,12 +10,13 @@ This domain documents FreeLLMAPI's OpenAI-compatible HTTP surface and its Anthro
 |------|-------|
 | [`01-rest-api.md`](01-rest-api.md) | OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/models`, streaming, tool calling, vision, video, Gemini grounding, response headers), the Anthropic Messages surface (`/v1/messages`), the pool-deduped free-tier budget API (`/api/free-tier`), and the encrypted backups API (`/api/backups`). |
 | [`02-idempotency.md`](02-idempotency.md) | `Idempotency-Key` on non-streaming `POST /v1/chat/completions` — `replay` vs `409 conflict` vs `miss`, fingerprint composition (`model`+`messages`+`temperature`/`top_p`/`max_tokens`/`tools`/`tool_choice`), SHA-256 key-hashing, non-streaming-only, in-flight NOT deduplicated (95bc46f), 24 h `IDEMPOTENCY_TTL_MS` window, `X-Routed-Via: idempotency`, curl retry example. Sources: `server/src/services/idempotency.ts`, `proxy.ts:1793-1835`. |
+| [`03-model-aliases.md`](03-model-aliases.md) | Model-id compatibility: HuggingFace-style `org/model:provider` pins resolve to the bare catalog row, plus operator aliases (`FREEAPI_MODEL_ALIASES`, `aliases` in declarative config, `model_aliases` setting) mapping any requested id to a catalog id, a unified slug, or `auto`/`auto:<profile>`. Fail-open resolution at every routing entry point. Sources: `server/src/services/model-aliases.ts`, `examples/hf-router-compat/`. |
 | [`CHANGELOG.md`](CHANGELOG.md) | Doc revision history for this domain, seeded from API-relevant commits. |
 
 ## Navigation
 
 - ← [Documentation root](../README.md)
-- API reference: [`01-rest-api.md`](01-rest-api.md) · [`02-idempotency.md`](02-idempotency.md)
+- API reference: [`01-rest-api.md`](01-rest-api.md) · [`02-idempotency.md`](02-idempotency.md) · [`03-model-aliases.md`](03-model-aliases.md)
 
 ## Related
 

@@ -13,6 +13,7 @@ import { routeRequest, hasEnabledVisionModel, hasEnabledToolsModel, resolveStick
 import { getDb } from '../db/index.js';
 import { resolveAuth, prependSystemPrompt } from '../lib/system-prompt.js';
 import { isUnifyEnabled, getModelGroups, resolveRequestedIdForDispatch } from '../services/model-groups.js';
+import { resolveRequestedModelId } from '../services/model-aliases.js';
 import { contentToString, estimateInputTokens, messageHasImage } from '../lib/content.js';
 import { routeOutputBudget } from '../lib/output-cap.js';
 import { resolveTaskType } from '../lib/task-type.js';
@@ -772,6 +773,9 @@ responsesRouter.post('/responses', async (req: Request, res: Response) => {
     ?? req.headers['x-session-id'];
   const sessionIdHeader = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
   const requestedModelLabel = reqData.model ?? 'auto';
+  // Aliases / foreign id spaces resolve before routing; the label keeps the
+  // caller's original string for logs and error messages.
+  const resolvedModelLabel = reqData.model ? resolveRequestedModelId(reqData.model) : 'auto';
 
   // Explicit `model` field pins routing. If the catalog has no enabled row
   // matching the requested id, return 400 — silently auto-routing to a
@@ -785,9 +789,9 @@ responsesRouter.post('/responses', async (req: Request, res: Response) => {
   // stays on the unscoped key so existing session affinity is unchanged.
   let stickyStrategyKey: string | undefined;
 
-  if (isAutoModel(requestedModelLabel)) {
+  if (isAutoModel(resolvedModelLabel)) {
     try {
-      resolvedChain = resolveRoutingChain(requestedModelLabel);
+      resolvedChain = resolveRoutingChain(resolvedModelLabel);
     } catch (err: any) {
       if (err?.status === 400) {
         res.status(400).json({
@@ -802,12 +806,12 @@ responsesRouter.post('/responses', async (req: Request, res: Response) => {
       getStickyModel(messages, sessionIdHeader, stickyStrategyKey),
       resolvedChain.chain,
     );
-  } else if (isFusionModel(requestedModelLabel)) {
+  } else if (isFusionModel(resolvedModelLabel)) {
     // Fusion is a virtual model, not a row in the catalog. Its panel and
     // judge each resolve through the normal router inside runFusion below.
   } else {
     const db = getDb();
-    const resolved = isUnifyEnabled() ? resolveRequestedIdForDispatch(requestedModelLabel, getModelGroups()) : null;
+    const resolved = isUnifyEnabled() ? resolveRequestedIdForDispatch(resolvedModelLabel, getModelGroups()) : null;
     const members = resolved?.memberDbIds ?? null;
     if (members && members.length > 0) {
       groupChain = resolveModelGroupCandidates(members, resolved!.demotedDbIds);
@@ -824,14 +828,14 @@ responsesRouter.post('/responses', async (req: Request, res: Response) => {
         });
         return;
       }
-      const sticky = getStickyModel(messages, sessionIdHeader, requestedModelLabel);
+      const sticky = getStickyModel(messages, sessionIdHeader, resolvedModelLabel);
       preferredModel = (sticky != null && groupChain.some(r => r.model_db_id === sticky)) ? sticky : undefined;
     } else {
-      const enabled = db.prepare('SELECT id FROM models WHERE model_id = ? AND enabled = 1').get(requestedModelLabel) as { id: number } | undefined;
+      const enabled = db.prepare('SELECT id FROM models WHERE model_id = ? AND enabled = 1').get(resolvedModelLabel) as { id: number } | undefined;
       if (enabled) {
         preferredModel = enabled.id;
       } else {
-        const disabled = db.prepare('SELECT id FROM models WHERE model_id = ?').get(requestedModelLabel) as { id: number } | undefined;
+        const disabled = db.prepare('SELECT id FROM models WHERE model_id = ?').get(resolvedModelLabel) as { id: number } | undefined;
         const reason = disabled ? 'is disabled' : 'is not in the catalog';
         res.status(400).json({
           error: {
