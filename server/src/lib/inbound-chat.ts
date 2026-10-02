@@ -19,6 +19,7 @@ import {
   isUnifyEnabled,
   resolveRequestedIdForDispatch,
 } from '../services/model-groups.js';
+import { resolveRequestedModelId } from '../services/model-aliases.js';
 import {
   fallbackRoutingTokens,
   newFallbackState,
@@ -101,7 +102,9 @@ interface ResolvedPin {
 }
 
 function resolvePin(model: string | undefined, messages: ChatMessage[], sessionId?: string): ResolvedPin {
-  const requested = model?.trim();
+  const raw = model?.trim();
+  // Aliases / foreign id spaces resolve before pinning — see model-aliases.ts.
+  const requested = raw ? resolveRequestedModelId(raw) : raw;
   const auto = !requested || requested.toLowerCase() === 'auto' || requested.toLowerCase().startsWith('auto:');
   if (auto) {
     return {

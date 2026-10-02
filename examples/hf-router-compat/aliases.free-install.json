@@ -1,0 +1,6 @@
+{
+  "zai-org/GLM-5.3:together": "glm-5.1",
+  "zai-org/GLM-5.3-Flash:together": "glm-4.7-flash",
+  "moonshotai/Kimi-K3:cerebras": "kimi-k2.6",
+  "deepseek-ai/DeepSeek-V4-Pro:fireworks-ai": "deepseek-v4-pro"
+}

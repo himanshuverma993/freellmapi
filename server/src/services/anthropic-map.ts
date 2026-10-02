@@ -73,6 +73,8 @@ export function classifyClaudeFamily(model?: string): ClaudeFamily | null {
   return null;
 }
 
+import { resolveRequestedModelId } from './model-aliases.js';
+
 export interface ResolvedAnthropicModel {
   // The catalog model db id to pin, or undefined to auto-route.
   preferredModelDbId?: number;
@@ -109,14 +111,15 @@ export function resolveAnthropicModel(model?: string): ResolvedAnthropicModel {
   if (family) {
     const target = getClaudeModelMap()[family];
     if (!target || target === 'auto') return { pinned: false };
-    const row = lookupEnabled(target);
+    // An operator pin may itself be an alias / foreign id (`org/model:provider`).
+    const row = lookupEnabled(resolveRequestedModelId(target));
     // A pinned-but-now-disabled/removed target degrades gracefully to auto.
     return row ? { preferredModelDbId: row.id, modelId: row.model_id, pinned: true } : { pinned: false };
   }
 
   // Not a Claude alias: treat as a concrete catalog model id and pin it if it
   // exists and is enabled; otherwise auto-route (lenient, like the OpenAI route).
-  const row = lookupEnabled((model ?? '').trim());
+  const row = lookupEnabled(resolveRequestedModelId((model ?? '').trim()));
   return row ? { preferredModelDbId: row.id, modelId: row.model_id, pinned: true } : { pinned: false };
 }
 
